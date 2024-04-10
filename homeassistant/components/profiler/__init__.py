@@ -1,4 +1,5 @@
 """The profiler integration."""
+
 import asyncio
 from contextlib import suppress
 from datetime import timedelta
@@ -11,7 +12,7 @@ import time
 import traceback
 from typing import Any, cast
 
-from lru import LRU  # pylint: disable=no-name-in-module
+from lru import LRU
 import voluptuous as vol
 
 from homeassistant.components import persistent_notification
@@ -35,6 +36,7 @@ SERVICE_DUMP_LOG_OBJECTS = "dump_log_objects"
 SERVICE_LRU_STATS = "lru_stats"
 SERVICE_LOG_THREAD_FRAMES = "log_thread_frames"
 SERVICE_LOG_EVENT_LOOP_SCHEDULED = "log_event_loop_scheduled"
+SERVICE_SET_ASYNCIO_DEBUG = "set_asyncio_debug"
 
 _LRU_CACHE_WRAPPER_OBJECT = _lru_cache_wrapper.__name__
 _SQLALCHEMY_LRU_OBJECT = "LRUCache"
@@ -45,7 +47,6 @@ _KNOWN_LRU_CLASSES = (
     "StatesMetaManager",
     "StateAttributesManager",
     "StatisticsMetaManager",
-    "IntegrationMatcher",
 )
 
 SERVICES = (
@@ -57,12 +58,14 @@ SERVICES = (
     SERVICE_LRU_STATS,
     SERVICE_LOG_THREAD_FRAMES,
     SERVICE_LOG_EVENT_LOOP_SCHEDULED,
+    SERVICE_SET_ASYNCIO_DEBUG,
 )
 
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=30)
 
 DEFAULT_MAX_OBJECTS = 5
 
+CONF_ENABLED = "enabled"
 CONF_SECONDS = "seconds"
 CONF_MAX_OBJECTS = "max_objects"
 
@@ -254,6 +257,19 @@ async def async_setup_entry(  # noqa: C901
             arepr.maxstring = original_maxstring
             arepr.maxother = original_maxother
 
+    async def _async_asyncio_debug(call: ServiceCall) -> None:
+        """Enable or disable asyncio debug."""
+        enabled = call.data[CONF_ENABLED]
+        # Always log this at critical level so we know when
+        # it's been changed when reviewing logs
+        _LOGGER.critical("Setting asyncio debug to %s", enabled)
+        # Make sure the logger is set to at least INFO or
+        # we won't see the messages
+        base_logger = logging.getLogger()
+        if enabled and base_logger.getEffectiveLevel() > logging.INFO:
+            base_logger.setLevel(logging.INFO)
+        hass.loop.set_debug(enabled)
+
     async_register_admin_service(
         hass,
         DOMAIN,
@@ -348,6 +364,14 @@ async def async_setup_entry(  # noqa: C901
         _async_dump_scheduled,
     )
 
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_SET_ASYNCIO_DEBUG,
+        _async_asyncio_debug,
+        schema=vol.Schema({vol.Optional(CONF_ENABLED, default=True): cv.boolean}),
+    )
+
     return True
 
 
@@ -402,11 +426,6 @@ async def _async_generate_memory_profile(hass: HomeAssistant, call: ServiceCall)
     # Imports deferred to avoid loading modules
     # in memory since usually only one part of this
     # integration is used at a time
-    if sys.version_info >= (3, 12):
-        raise HomeAssistantError(
-            "Memory profiling is not supported on Python 3.12. Please use Python 3.11."
-        )
-
     from guppy import hpy  # pylint: disable=import-outside-toplevel
 
     start_time = int(time.time() * 1000000)

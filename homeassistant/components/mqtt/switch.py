@@ -1,4 +1,5 @@
 """Support for MQTT switches."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -39,7 +40,7 @@ from .debug_info import log_messages
 from .mixins import (
     MQTT_ENTITY_COMMON_SCHEMA,
     MqttEntity,
-    async_mqtt_entry_helper,
+    async_setup_entity_entry_helper,
     write_state_on_attr_change,
 )
 from .models import MqttValueTemplate, ReceiveMessage
@@ -71,7 +72,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MQTT switch through YAML and through MQTT discovery."""
-    await async_mqtt_entry_helper(
+    await async_setup_entity_entry_helper(
         hass,
         config_entry,
         MqttSwitch,

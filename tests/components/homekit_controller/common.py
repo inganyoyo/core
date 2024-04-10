@@ -1,4 +1,5 @@
 """Code to support homekit_controller tests."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -155,6 +156,13 @@ class Helper:
         assert state is not None
         return state
 
+    async def async_set_aid_iid_status(
+        self, aid_iid_status: list[tuple[int, int, int]]
+    ) -> None:
+        """Set the status of a set of aid/iid pairs."""
+        self.pairing.testing.set_aid_iid_status(aid_iid_status)
+        await self.hass.async_block_till_done()
+
     @callback
     def async_assert_service_values(
         self, service: str, characteristics: dict[str, Any]
@@ -187,8 +195,7 @@ async def setup_accessories_from_file(hass: HomeAssistant, path: str) -> Accesso
         load_fixture, os.path.join("homekit_controller", path)
     )
     accessories_json = hkloads(accessories_fixture)
-    accessories = Accessories.from_list(accessories_json)
-    return accessories
+    return Accessories.from_list(accessories_json)
 
 
 async def setup_platform(hass):

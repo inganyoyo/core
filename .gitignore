@@ -111,9 +111,6 @@ virtualization/vagrant/config
 !.vscode/tasks.json
 .env
 
-# Built docs
-docs/build
-
 # Windows Explorer
 desktop.ini
 /home-assistant.pyproj
@@ -135,3 +132,6 @@ tmp_cache
 
 # python-language-server / Rope
 .ropeproject
+
+# Will be created from script/split_tests.py
+pytest_buckets.txt

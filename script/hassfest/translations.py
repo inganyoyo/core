@@ -1,4 +1,5 @@
 """Validate integration translation files."""
+
 from __future__ import annotations
 
 from functools import partial
@@ -23,6 +24,7 @@ REMOVED = 2
 RE_REFERENCE = r"\[\%key:(.+)\%\]"
 RE_TRANSLATION_KEY = re.compile(r"^(?!.+[_-]{2})(?![_-])[a-z0-9-_]+(?<![_-])$")
 RE_COMBINED_REFERENCE = re.compile(r"(.+\[%)|(%\].+)")
+RE_PLACEHOLDER_IN_SINGLE_QUOTES = re.compile(r"'{\w+}'")
 
 # Only allow translation of integration names if they contain non-brand names
 ALLOW_NAME_TRANSLATION = {
@@ -33,10 +35,12 @@ ALLOW_NAME_TRANSLATION = {
     "garages_amsterdam",
     "generic",
     "google_travel_time",
+    "holiday",
     "homekit_controller",
     "islamic_prayer_times",
     "local_calendar",
     "local_ip",
+    "local_todo",
     "nmap_tracker",
     "rpi_power",
     "waze_travel_time",
@@ -125,12 +129,23 @@ def translation_value_validator(value: Any) -> str:
     """Validate that the value is a valid translation.
 
     - prevents string with HTML
+    - prevents strings with single quoted placeholders
     - prevents combined translations
     """
     value = cv.string_with_no_html(value)
+    value = string_no_single_quoted_placeholders(value)
     if RE_COMBINED_REFERENCE.search(value):
         raise vol.Invalid("the string should not contain combined translations")
     return str(value)
+
+
+def string_no_single_quoted_placeholders(value: str) -> str:
+    """Validate that the value does not contain placeholders inside single quotes."""
+    if RE_PLACEHOLDER_IN_SINGLE_QUOTES.search(value):
+        raise vol.Invalid(
+            "the string should not contain placeholders inside single quotes"
+        )
+    return value
 
 
 def gen_data_entry_schema(
@@ -214,6 +229,29 @@ def gen_data_entry_schema(
     return vol.All(*validators)
 
 
+def gen_issues_schema(config: Config, integration: Integration) -> dict[str, Any]:
+    """Generate the issues schema."""
+    return {
+        str: vol.All(
+            cv.has_at_least_one_key("description", "fix_flow"),
+            vol.Schema(
+                {
+                    vol.Required("title"): translation_value_validator,
+                    vol.Exclusive(
+                        "description", "fixable"
+                    ): translation_value_validator,
+                    vol.Exclusive("fix_flow", "fixable"): gen_data_entry_schema(
+                        config=config,
+                        integration=integration,
+                        flow_title=UNDEFINED,
+                        require_step_title=False,
+                    ),
+                },
+            ),
+        )
+    }
+
+
 def gen_strings_schema(config: Config, integration: Integration) -> vol.Schema:
     """Generate a strings schema."""
     return vol.Schema(
@@ -265,25 +303,7 @@ def gen_strings_schema(config: Config, integration: Integration) -> vol.Schema:
             vol.Optional("application_credentials"): {
                 vol.Optional("description"): translation_value_validator,
             },
-            vol.Optional("issues"): {
-                str: vol.All(
-                    cv.has_at_least_one_key("description", "fix_flow"),
-                    vol.Schema(
-                        {
-                            vol.Required("title"): translation_value_validator,
-                            vol.Exclusive(
-                                "description", "fixable"
-                            ): translation_value_validator,
-                            vol.Exclusive("fix_flow", "fixable"): gen_data_entry_schema(
-                                config=config,
-                                integration=integration,
-                                flow_title=UNDEFINED,
-                                require_step_title=False,
-                            ),
-                        },
-                    ),
-                )
-            },
+            vol.Optional("issues"): gen_issues_schema(config, integration),
             vol.Optional("entity_component"): cv.schema_with_slug_keys(
                 {
                     vol.Optional("name"): str,
@@ -303,6 +323,12 @@ def gen_strings_schema(config: Config, integration: Integration) -> vol.Schema:
                     ),
                 },
                 slug_validator=vol.Any("_", cv.slug),
+            ),
+            vol.Optional("device"): cv.schema_with_slug_keys(
+                {
+                    vol.Optional("name"): translation_value_validator,
+                },
+                slug_validator=translation_key_validator,
             ),
             vol.Optional("entity"): cv.schema_with_slug_keys(
                 cv.schema_with_slug_keys(
@@ -327,6 +353,10 @@ def gen_strings_schema(config: Config, integration: Integration) -> vol.Schema:
                 ),
                 slug_validator=cv.slug,
             ),
+            vol.Optional("exceptions"): cv.schema_with_slug_keys(
+                {vol.Optional("message"): translation_value_validator},
+                slug_validator=cv.slug,
+            ),
             vol.Optional("services"): cv.schema_with_slug_keys(
                 {
                     vol.Required("name"): translation_value_validator,
@@ -342,6 +372,11 @@ def gen_strings_schema(config: Config, integration: Integration) -> vol.Schema:
                 },
                 slug_validator=translation_key_validator,
             ),
+            vol.Optional("conversation"): {
+                vol.Required("agent"): {
+                    vol.Required("done"): translation_value_validator,
+                },
+            },
         }
     )
 
@@ -357,7 +392,8 @@ def gen_auth_schema(config: Config, integration: Integration) -> vol.Schema:
                     flow_title=REQUIRED,
                     require_step_title=True,
                 )
-            }
+            },
+            vol.Optional("issues"): gen_issues_schema(config, integration),
         }
     )
 
@@ -422,7 +458,10 @@ def gen_platform_strings_schema(config: Config, integration: Integration) -> vol
 
 
 ONBOARDING_SCHEMA = vol.Schema(
-    {vol.Required("area"): {str: translation_value_validator}}
+    {
+        vol.Required("area"): {str: translation_value_validator},
+        vol.Required("dashboard"): {str: {"title": translation_value_validator}},
+    }
 )
 
 
@@ -531,6 +570,11 @@ def validate_translation_file(  # noqa: C901
             integration.add_error(
                 "translations",
                 f"{reference['source']} contains invalid reference {reference['ref']}: Could not find {key}",
+            )
+        elif match := re.match(RE_REFERENCE, search[key]):
+            integration.add_error(
+                "translations",
+                f"Lokalise supports only one level of references: \"{reference['source']}\" should point to directly to \"{match.groups()[0]}\"",
             )
 
 

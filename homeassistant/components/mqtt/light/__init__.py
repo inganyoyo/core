@@ -1,4 +1,5 @@
 """Support for MQTT lights."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType
 
-from ..mixins import async_mqtt_entry_helper
+from ..mixins import async_setup_entity_entry_helper
 from .schema import CONF_SCHEMA, MQTT_LIGHT_SCHEMA_SCHEMA
 from .schema_basic import (
     DISCOVERY_SCHEMA_BASIC,
@@ -69,7 +70,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MQTT lights through YAML and through MQTT discovery."""
-    await async_mqtt_entry_helper(
+    await async_setup_entity_entry_helper(
         hass,
         config_entry,
         None,
